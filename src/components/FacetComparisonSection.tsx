@@ -64,8 +64,8 @@ export const FacetComparisonSection: React.FC<ComparisonProps> = ({ onOpenBookin
               alt="Diamond optical comparison"
               className={`w-full h-full object-contain transition-all duration-700 ${
                 selectedCut === '100'
-                  ? 'scale-105 filter drop-shadow-[0_0_35px_rgba(74,222,128,0.45)]'
-                  : 'scale-95 filter drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]'
+                  ? 'scale-105 filter drop-shadow-2xl'
+                  : 'scale-95 filter drop-shadow-md opacity-75'
               }`}
             />
 

@@ -204,7 +204,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, totalFrames = 60 }) =
 
             <h1 className="font-serif text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.08] drop-shadow-2xl">
               More Light. More Fire. <br />
-              <span className="italic font-normal bg-gradient-to-r from-gold-light via-gold-mid to-amber-200 bg-clip-text text-transparent">
+              <span className="italic font-normal text-gold-light">
                 The 100 Facet Diamond.
               </span>
             </h1>
