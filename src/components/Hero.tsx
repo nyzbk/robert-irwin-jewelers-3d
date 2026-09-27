@@ -1,130 +1,161 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Sparkles, Gem, ShieldCheck, ChevronDown, Award } from 'lucide-react';
+import React, { useEffect, useRef, useState, useTransition } from 'react';
+import { useScroll, useSpring, useTransform, motion } from 'framer-motion';
+import { ArrowUpRight, Compass, ShieldCheck, Sparkles } from 'lucide-react';
 
 interface HeroProps {
   onOpenBooking: () => void;
-  totalFrames?: number;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onOpenBooking, totalFrames = 60 }) => {
+const TOTAL_FRAMES = 240;
+
+export const Hero: React.FC<HeroProps> = ({ onOpenBooking }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
   const currentFrameRef = useRef<number>(1);
+  const [, startTransition] = useTransition();
 
-  const [, setCurrentFrame] = useState<number>(1);
-  const [scrollProgress, setScrollProgress] = useState<number>(0);
-  const [activeChapter, setActiveChapter] = useState<string>('Proprietary 100-Facet Diamond Pavilion & Micro-Girdle Cutting');
-  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const [, setIsLoaded] = useState(false);
+  const [loadCount, setLoadCount] = useState(0);
 
+  // Jack Roberts spring physics: stiffness: 100, damping: 30
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ['start start', 'end end'],
+  });
+
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 100,
+    damping: 30,
+    restDelta: 0.0001,
+  });
+
+  // Staged narrative typography opacities across 240 frames
+  const stage1Opacity = useTransform(smoothProgress, [0, 0.18, 0.26], [1, 1, 0]);
+  const stage1Y = useTransform(smoothProgress, [0, 0.22], [0, -35]);
+
+  const stage2Opacity = useTransform(smoothProgress, [0.26, 0.34, 0.46, 0.54], [0, 1, 1, 0]);
+  const stage2Y = useTransform(smoothProgress, [0.26, 0.34, 0.46, 0.54], [35, 0, 0, -35]);
+
+  const stage3Opacity = useTransform(smoothProgress, [0.54, 0.62, 0.74, 0.82], [0, 1, 1, 0]);
+  const stage3Y = useTransform(smoothProgress, [0.54, 0.62, 0.74, 0.82], [35, 0, 0, -35]);
+
+  const stage4Opacity = useTransform(smoothProgress, [0.82, 0.90, 1], [0, 1, 1]);
+  const stage4Y = useTransform(smoothProgress, [0.82, 0.90], [35, 0]);
+
+  // Frame 1 immediate load + progressive background batching
   useEffect(() => {
-    const total = totalFrames;
-    const imgs: HTMLImageElement[] = new Array(total);
+    const imgs: HTMLImageElement[] = new Array(TOTAL_FRAMES);
 
-    // 1. Immediately fetch Frame 1 (<100ms first paint)
     const firstImg = new Image();
-    firstImg.src = `/frames/frame_0001.webp?v=fast-v2`;
+    firstImg.src = `/frames/frame_0001.webp?v=240`;
     firstImg.onload = () => {
       imgs[0] = firstImg;
       setIsLoaded(true);
+      setLoadCount(1);
       renderFrame(1);
 
-      // 2. Progressive non-blocking preload for frames 2..total in small smooth batches
-      let nextIdx = 2;
-      const loadNextBatch = () => {
-        const batchSize = 6;
-        for (let b = 0; b < batchSize && nextIdx <= total; b++, nextIdx++) {
-          const idx = nextIdx;
+      let nextIndex = 2;
+      const loadBatch = () => {
+        const batchSize = 10;
+        for (let i = 0; i < batchSize && nextIndex <= TOTAL_FRAMES; i++, nextIndex++) {
+          const idx = nextIndex;
           const img = new Image();
-          const frameStr = String(idx).padStart(4, '0');
-          img.src = `/frames/frame_${frameStr}.webp?v=fast-v2`;
+          const frameNum = String(idx).padStart(4, '0');
+          img.src = `/frames/frame_${frameNum}.webp?v=240`;
           img.onload = () => {
+            imgs[idx - 1] = img;
+            setLoadCount((prev) => prev + 1);
             if (currentFrameRef.current === idx) {
               renderFrame(idx);
             }
           };
           imgs[idx - 1] = img;
         }
-        if (nextIdx <= total) {
-          setTimeout(loadNextBatch, 15);
+        if (nextIndex <= TOTAL_FRAMES) {
+          setTimeout(loadBatch, 15);
         }
       };
-      loadNextBatch();
-    };
-    firstImg.onerror = () => {
-      setIsLoaded(true);
+      loadBatch();
     };
     imgs[0] = firstImg;
-    imagesRef.current = imgs;}, [totalFrames]);
+    imagesRef.current = imgs;
+  }, []);
 
+  // Canvas COVER rendering algorithm
   const renderFrame = (frameIndex: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     let img = imagesRef.current[frameIndex - 1];
     if (!img || !img.complete || img.naturalWidth === 0) {
-      for (let offset = 1; offset < totalFrames; offset++) {
-        const prev = imagesRef.current[frameIndex - 1 - offset];
-        if (prev && prev.complete && prev.naturalWidth > 0) {
-          img = prev;
-          break;
-        }
-        const next = imagesRef.current[frameIndex - 1 + offset];
-        if (next && next.complete && next.naturalWidth > 0) {
-          img = next;
+      for (let i = frameIndex - 1; i >= 0; i--) {
+        if (imagesRef.current[i] && imagesRef.current[i].complete && imagesRef.current[i].naturalWidth > 0) {
+          img = imagesRef.current[i];
           break;
         }
       }
     }
-    if (!img || !img.complete) return;
+    if (!img || !img.complete || img.naturalWidth === 0) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
 
-    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      ctx.scale(dpr, dpr);
+    if (canvas.width !== cw * dpr || canvas.height !== ch * dpr) {
+      canvas.width = cw * dpr;
+      canvas.height = ch * dpr;
     }
 
-    const imgRatio = 1920 / 1080;
-    const canvasRatio = width / height;
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cw, ch);
 
-    let drawWidth = width;
-    let drawHeight = height;
-    let offsetX = 0;
-    let offsetY = 0;
+    const imgRatio = img.naturalWidth / img.naturalHeight;
+    const canvasRatio = cw / ch;
+
+    let drawW: number;
+    let drawH: number;
+    let offsetX: number;
+    let offsetY: number;
 
     if (canvasRatio > imgRatio) {
-      drawWidth = width;
-      drawHeight = width / imgRatio;
-      offsetY = (height - drawHeight) / 2;
+      drawW = cw;
+      drawH = cw / imgRatio;
+      offsetX = 0;
+      offsetY = (ch - drawH) / 2;
     } else {
-      drawHeight = height;
-      drawWidth = height * imgRatio;
-      offsetX = (width - drawWidth) / 2;
+      drawW = ch * imgRatio;
+      drawH = ch;
+      offsetX = (cw - drawW) / 2;
+      offsetY = 0;
     }
 
-    ctx.clearRect(0, 0, width, height);
-    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-
-    // Warm emerald & dark velvet vignette
-    const gradient = ctx.createRadialGradient(
-      width / 2, height / 2, width * 0.25,
-      width / 2, height / 2, Math.max(width, height) * 0.75
-    );
-    gradient.addColorStop(0, 'rgba(3, 20, 14, 0.15)');
-    gradient.addColorStop(0.7, 'rgba(3, 20, 14, 0.45)');
-    gradient.addColorStop(1, 'rgba(3, 20, 14, 0.88)');
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+    ctx.restore();
   };
 
+  // Sync canvas with spring physics
+  useEffect(() => {
+    const unsubscribe = smoothProgress.on('change', (v) => {
+      const targetFrame = Math.min(
+        TOTAL_FRAMES,
+        Math.max(1, Math.floor(v * (TOTAL_FRAMES - 1)) + 1)
+      );
+      if (targetFrame !== currentFrameRef.current) {
+        currentFrameRef.current = targetFrame;
+        startTransition(() => {
+          renderFrame(targetFrame);
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [smoothProgress]);
+
+  // Window resize handler
   useEffect(() => {
     const handleResize = () => {
       renderFrame(currentFrameRef.current);
@@ -133,134 +164,141 @@ export const Hero: React.FC<HeroProps> = ({ onOpenBooking, totalFrames = 60 }) =
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const rect = container.getBoundingClientRect();
-      const scrollableDistance = rect.height - window.innerHeight;
-      const currentScroll = -rect.top;
-
-      let progress = currentScroll / scrollableDistance;
-      progress = Math.max(0, Math.min(1, progress));
-      setScrollProgress(progress);
-
-      const frameNumber = Math.max(1, Math.min(totalFrames, Math.floor(progress * (totalFrames - 1)) + 1));
-      currentFrameRef.current = frameNumber;
-      setCurrentFrame(frameNumber);
-      renderFrame(frameNumber);
-
-      if (progress < 0.25) {
-        setActiveChapter('Proprietary 100-Facet Diamond Pavilion & Micro-Girdle Cutting');
-      } else if (progress < 0.50) {
-        setActiveChapter('Optical Scintillation: 100 Facets vs Standard 58 Facets');
-      } else if (progress < 0.75) {
-        setActiveChapter('Solid 950 Platinum & 18K Gold Cathedral Setting');
-      } else {
-        setActiveChapter('80 Years of Mid-South Master Goldsmithing (1946–2026)');
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [totalFrames]);
-
-  const activeFacets = Math.min(100, Math.round(58 + scrollProgress * 42));
-  const lightDispersionIndex = Math.round(92 + scrollProgress * 7.9);
-
   return (
-    <section id="diamond-tour" ref={containerRef} className="relative h-[450vh] bg-emerald-950">
-      <div className="sticky top-0 h-screen w-full overflow-hidden flex flex-col justify-between p-4 sm:p-8 md:p-12">
-        {/* Spatial Canvas */}
+    <div ref={containerRef} className="relative h-[400vh] bg-[#0C0D11] text-[#FAF8F6]">
+      {/* Sticky 100vh Fullscreen Viewport */}
+      <div className="sticky top-0 h-screen w-full overflow-hidden flex flex-col justify-between">
+        {/* Background Neural Canvas */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
         />
 
-        {/* Top Header Telemetry (100 Facets & Mid-South Heritage) */}
-        <div className="relative z-10 w-full flex items-center justify-between pt-16 sm:pt-20 text-[11px] font-mono tracking-widest text-slate-300">
-          <div className="flex items-center gap-2 bg-emerald-950/85 border border-gold-mid/30 px-3.5 py-1.5 backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-gold-mid animate-pulse" />
-            <span className="text-white font-semibold uppercase">
-              ROBERT IRWIN // 100-FACET VAULT
+        {/* Cinematic Platinum Sparkle & Rose Gold Vignette */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0C0D11]/95 via-[#0C0D11]/40 to-[#0C0D11]/80 pointer-events-none z-10" />
+
+        {/* 12-Column Architectural Hairline Grid Overlay */}
+        <div className="absolute inset-0 pointer-events-none z-15 opacity-[0.08] grid grid-cols-6 md:grid-cols-12 max-w-[1600px] mx-auto px-6">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="border-r border-[#E2A898] h-full" />
+          ))}
+        </div>
+
+        {/* Top Telemetry Header */}
+        <div className="relative z-20 pt-24 px-6 md:px-12 flex justify-between items-start max-w-[1600px] mx-auto w-full">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E2A898]/15 border border-[#E2A898]/30 text-[#E2A898] text-[11px] font-mono tracking-widest uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#E2A898] animate-ping" />
+              MEMPHIS DIAMOND ATELIER • EST. 1977
+            </span>
+            <span className="hidden md:inline text-[11px] font-mono text-[#9496A1]">
+              376 PERKINS EXTD • MEMPHIS, TN
             </span>
           </div>
 
-          <div className="hidden md:flex items-center gap-6 bg-emerald-950/85 border border-gold-mid/30 px-4 py-1.5 backdrop-blur-md">
-            <span>OPTICAL FACETS: <strong className="text-gold-mid">{activeFacets} FACETS</strong></span>
-            <span>LIGHT REFRACTION: <strong className="text-white">{lightDispersionIndex}% DISPERSION</strong></span>
-            <span>EXPERIENCE: {isLoaded ? <strong className="text-emerald-400">80 YRS • 98% RECOMMENDATION</strong> : <strong className="text-amber-400">ALIGNING OPTICS...</strong>}</span>
+          <div className="text-right font-mono text-[11px] text-[#9496A1]">
+            <div className="text-[#E2A898] font-semibold">240-FRAME BRILLIANCE PROJECTION</div>
+            <div>BUFFER: {loadCount}/{TOTAL_FRAMES} FRAMES ({Math.round((loadCount / TOTAL_FRAMES) * 100)}%)</div>
           </div>
         </div>
 
-        {/* Center Spatial Narrative */}
-        <div className="relative z-10 my-auto max-w-4xl space-y-6 pointer-events-none">
-          <div className="space-y-4 pointer-events-auto">
-            <div className="inline-flex items-center gap-2 bg-emerald-900/80 border border-gold-mid/50 px-3.5 py-1 text-gold-light font-sans text-xs tracking-widest uppercase">
-              <Sparkles className="w-3.5 h-3.5 text-gold-mid" />
-              <span>Mid-South’s Most Recommended Diamond House Since 1946</span>
+        {/* Center Dynamic Staged Narrative */}
+        <div className="relative z-20 px-6 md:px-12 max-w-[1600px] mx-auto w-full my-auto pointer-events-none">
+          {/* Stage 1: Memphis Diamond Atelier Since 1977 */}
+          <motion.div
+            style={{ opacity: stage1Opacity, y: stage1Y }}
+            className="max-w-4xl"
+          >
+            <div className="text-[12px] font-mono tracking-[0.25em] text-[#E2A898] uppercase mb-4 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-[#E2A898]" />
+              MEMPHIS FAMILY JEWELERS • 47+ YEARS
             </div>
-
-            <h1 className="font-serif text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.08] drop-shadow-2xl">
-              More Light. More Fire. <br />
-              <span className="italic font-normal text-gold-light">
-                The 100 Facet Diamond.
-              </span>
+            <h1 className="font-['Prata',serif] text-[48px] md:text-[84px] leading-[0.92] tracking-tight text-[#FAF8F6]">
+              Modern elegance crafted for generations.
             </h1>
-
-            <p className="max-w-2xl text-sm sm:text-base text-slate-200 font-sans leading-relaxed drop-shadow">
-              Standard diamonds possess 58 facets. Robert Irwin’s patented cut features 100 mathematically calibrated facets, releasing up to 38% more brilliance. Five regional showrooms in Memphis, Little Rock, and Southaven.
+            <p className="mt-6 text-[16px] md:text-[20px] text-[#9496A1] max-w-2xl font-light leading-relaxed font-['Urbanist',sans-serif]">
+              Memphis' destination for custom engagement rings, certified natural and precision lab-grown diamonds, and master goldsmith restoration across 4 Mid-South showrooms.
             </p>
-          </div>
+          </motion.div>
 
-          {/* Action CTAs */}
-          <div className="flex flex-wrap items-center gap-4 pt-2 pointer-events-auto">
-            <button
-              onClick={onOpenBooking}
-              className="px-8 py-4 bg-gradient-to-r from-emerald-900 to-emerald-850 hover:from-emerald-800 hover:to-emerald-800 text-white font-sans text-xs uppercase tracking-widest font-semibold border border-gold-mid transition-all duration-300 shadow-xl hover:shadow-facet-100-glow flex items-center gap-3"
-            >
-              <Gem className="w-4 h-4 text-gold-mid" />
-              <span>Reserve Private Salon Viewing</span>
-            </button>
+          {/* Stage 2: Natural & Lab-Grown GIA Certified Diamonds */}
+          <motion.div
+            style={{ opacity: stage2Opacity, y: stage2Y }}
+            className="max-w-3xl"
+          >
+            <div className="text-[12px] font-mono tracking-[0.25em] text-[#E2A898] uppercase mb-4 flex items-center gap-2">
+              <Compass className="w-3.5 h-3.5 text-[#E2A898]" />
+              THE MID-SOUTH'S LARGEST DIAMOND SELECTION
+            </div>
+            <h2 className="font-['Prata',serif] text-[44px] md:text-[76px] leading-[0.92] text-[#FAF8F6]">
+              Compare natural & lab side by side.
+            </h2>
+            <p className="mt-6 text-[16px] md:text-[19px] text-[#9496A1] font-light leading-relaxed font-['Urbanist',sans-serif]">
+              Full transparency, no bias. View loose certified diamonds under high-magnification binocular gem microscopes and choose the exact balance of beauty and budget.
+            </p>
+          </motion.div>
 
-            <a
-              href="#optical-lab"
-              className="px-6 py-4 bg-emerald-950/80 hover:bg-emerald-900 text-slate-200 hover:text-white font-sans text-xs uppercase tracking-widest font-medium border border-gold-mid/30 hover:border-gold-mid/60 transition-all duration-300 flex items-center gap-2 backdrop-blur-sm"
-            >
-              <Award className="w-4 h-4 text-gold-mid" />
-              <span>Compare 100 vs 58 Facets</span>
-            </a>
-          </div>
+          {/* Stage 3: Master Goldsmiths & 3D Custom Jewelry Studio */}
+          <motion.div
+            style={{ opacity: stage3Opacity, y: stage3Y }}
+            className="max-w-3xl"
+          >
+            <div className="text-[12px] font-mono tracking-[0.25em] text-[#E2A898] uppercase mb-4 flex items-center gap-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#E2A898]" />
+              IN-HOUSE JEWELRY ATELIER
+            </div>
+            <h2 className="font-['Prata',serif] text-[44px] md:text-[76px] leading-[0.92] text-[#FAF8F6]">
+              Designed in 3D. Cast on site.
+            </h2>
+            <p className="mt-6 text-[16px] md:text-[19px] text-[#9496A1] font-light leading-relaxed font-['Urbanist',sans-serif]">
+              Our on-site master jewelers handle laser welding, diamond resetting, ring sizing, and complete custom CAD fabrication without your jewelry ever leaving our care.
+            </p>
+          </motion.div>
+
+          {/* Stage 4: Private VIP Salon Consultations */}
+          <motion.div
+            style={{ opacity: stage4Opacity, y: stage4Y }}
+            className="max-w-3xl pointer-events-auto"
+          >
+            <div className="text-[12px] font-mono tracking-[0.25em] text-[#E2A898] uppercase mb-4">
+              PERKINS SALON APPOINTMENTS
+            </div>
+            <h2 className="font-['Prata',serif] text-[44px] md:text-[76px] leading-[0.92] text-[#FAF8F6]">
+              Design your dream ring.
+            </h2>
+            <p className="mt-6 text-[16px] md:text-[19px] text-[#9496A1] font-light leading-relaxed font-['Urbanist',sans-serif]">
+              Book a one-on-one custom design appointment with Amber Dyson and our master bridal team. Complimentary espresso and champagne.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <button
+                onClick={onOpenBooking}
+                className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-[#E2A898] text-[#0C0D11] font-semibold text-[14px] uppercase tracking-wider transition-all duration-300 hover:bg-[#edb8aa] shadow-lg shadow-[#E2A898]/25 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <span>Book VIP Bridal Appointment</span>
+                <ArrowUpRight className="w-4 h-4 transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
+              </button>
+              <a
+                href="tel:9017673397"
+                className="px-6 py-4 rounded-xl border border-[#E2A898]/30 text-[#FAF8F6] font-mono text-[13px] hover:bg-[#E2A898]/10 transition-colors"
+              >
+                (901) 767-3397
+              </a>
+            </div>
+          </motion.div>
         </div>
 
-        {/* Bottom Scroll Chapter Progression & Specifications */}
-        <div className="relative z-10 w-full flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 pb-4">
-          {/* Active Spatial Chapter */}
-          <div className="bg-emerald-950/90 border border-gold-mid/25 p-4 max-w-md backdrop-blur-md space-y-1">
-            <div className="flex items-center justify-between text-[10px] font-mono tracking-widest uppercase text-slate-400">
-              <span>Diamond Motion Sequence</span>
-              <span className="text-gold-mid">{Math.round(scrollProgress * 100)}%</span>
-            </div>
-            <div className="text-xs sm:text-sm font-serif font-semibold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{activeChapter}</span>
-            </div>
-            <div className="w-full bg-emerald-900 h-1 mt-2 overflow-hidden">
-              <div
-                className="bg-gradient-to-r from-emerald-400 via-gold-mid to-gold-light h-full transition-all duration-200"
-                style={{ width: `${Math.max(5, scrollProgress * 100)}%` }}
-              />
-            </div>
+        {/* Bottom Status Ribbon */}
+        <div className="relative z-20 pb-8 px-6 md:px-12 max-w-[1600px] mx-auto w-full flex justify-between items-end border-t border-[#E2A898]/15 pt-4 text-[12px] font-mono text-[#9496A1]">
+          <div className="flex items-center gap-6">
+            <span className="text-[#E2A898]">4 MID-SOUTH SHOWROOMS</span>
+            <span className="hidden md:inline">PERKINS EXTD • WOLFCHASE • BARTLETT • SOUTHAVEN</span>
           </div>
-
-          {/* Scroll Prompt */}
-          <div className="hidden lg:flex items-center gap-3 text-[11px] font-mono tracking-widest uppercase text-slate-400 bg-emerald-950/80 border border-gold-mid/20 px-4 py-2 backdrop-blur-sm">
-            <span>Scroll To Inspect 100 Facet Reflection</span>
-            <ChevronDown className="w-4 h-4 text-gold-mid animate-bounce" />
+          <div className="flex items-center gap-2">
+            <span>SCROLL TO EXPLORE ATELIER</span>
+            <span className="animate-bounce">↓</span>
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 };
