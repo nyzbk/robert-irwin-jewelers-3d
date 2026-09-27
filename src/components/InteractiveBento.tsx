@@ -41,7 +41,7 @@ export const InteractiveBento: React.FC<InteractiveBentoProps> = ({ onOpenBookin
               <div className="flex items-center justify-between border-b border-[#E2A898]/20 pb-4 mb-6">
                 <span className="text-[11px] font-mono text-[#E2A898] tracking-widest uppercase flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-[#E2A898]" />
-                  CUSTOM DIAMOND CONFIGURATOR
+                  CUSTOM ENGAGEMENT SUITE
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full bg-[#E2A898]/20 text-[#E2A898] text-[10px] font-mono font-bold">
                   GIA / IGI CERTIFIED

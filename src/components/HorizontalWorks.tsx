@@ -36,9 +36,9 @@ const ATELIER_ITEMS: AtelierItem[] = [
     category: 'BESPOKE BRIDAL',
     title: 'The 3D Custom Design Atelier',
     subtitle: 'From hand-drawn sketch to precision wax model to heirloom platinum.',
-    description: 'Our in-house master jewelers transform your concept through photorealistic 3D CAD modeling, high-resolution wax prototypes you can touch, and hand-cast precious metals.',
+    description: 'Our in-house master jewelers transform your concept through bespoke artisan design modeling, high-resolution wax prototypes you can touch, and hand-cast precious metals.',
     benchmark: '100% IN-HOUSE',
-    features: ['3D CAD Photorealism', 'Try-On Wax Resin Models', 'Hand-Cast 950 Platinum & 18K Gold'],
+    features: ['Custom Wax Model Try-Ons', 'Try-On Wax Resin Models', 'Hand-Cast 950 Platinum & 18K Gold'],
   },
   {
     id: 'natural-lab-grown',
